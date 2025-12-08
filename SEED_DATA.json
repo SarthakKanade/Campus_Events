@@ -1,0 +1,36 @@
+{
+    "users": [
+        {
+            "name": "Admin User",
+            "email": "admin@college.edu",
+            "role": "admin"
+        },
+        {
+            "name": "Coding Club",
+            "email": "coding@college.edu",
+            "role": "organizer"
+        },
+        {
+            "name": "Rahul Sharma",
+            "email": "student1@college.edu",
+            "role": "student"
+        }
+    ],
+    "events": [
+        {
+            "title": "Hackathon 2025",
+            "status": "approved",
+            "date": "2025-11-20"
+        },
+        {
+            "title": "Music Fest",
+            "status": "pending",
+            "date": "2025-12-05"
+        },
+        {
+            "title": "Networking Night",
+            "status": "approved",
+            "date": "2025-12-08"
+        }
+    ]
+}
