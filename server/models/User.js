@@ -22,7 +22,18 @@ const userSchema = new mongoose.Schema({
     studentID: {
         type: String,
         required: function () { return this.role === 'student'; } // Only required if role is student
-    }
+    },
+    bio: { type: String, default: '' },
+    interests: [{ type: String }],
+    avatar: { type: String, default: '' },
+    isDataPrivate: { type: Boolean, default: false }, // Toggle for students
+    socials: {
+        linkedin: { type: String, default: '' },
+        instagram: { type: String, default: '' },
+        website: { type: String, default: '' }
+    },
+    followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

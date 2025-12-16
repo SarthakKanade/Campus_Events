@@ -3,6 +3,7 @@ import { Html5QrcodeScanner } from 'html5-qrcode';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { Scan, AlertCircle, CheckCircle } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const OrganizerScanner = () => {
     const [scanResult, setScanResult] = useState(null);
@@ -50,9 +51,14 @@ const OrganizerScanner = () => {
         }
     };
 
+    const { user } = useAuth(); // Get user from context
+
+    // ...
+
     const processCheckIn = async (eventId, userId) => {
         try {
-            const res = await axios.post('http://localhost:5001/api/events/scan', { eventId, userId });
+            const config = { headers: { 'x-auth-token': user?.token || localStorage.getItem('token') } };
+            const res = await axios.post('/api/events/scan', { eventId, userId }, config);
 
             setScanResult({
                 success: true,
@@ -82,7 +88,7 @@ const OrganizerScanner = () => {
             setManualId('');
         } catch (e) {
             // Maybe they entered raw ID? Let's assume demo copy-paste JSON
-            toast.error("Invalid input. Paste the JSON from the QR code.");
+            toast.error("Invalid input. Please copy the FULL ticket code (JSON) starting with '{'.");
         }
     };
 

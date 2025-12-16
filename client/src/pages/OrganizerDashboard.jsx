@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import { Plus, List, Clock, CheckCircle, XCircle, Users, Calendar, MapPin, AlertCircle, RefreshCcw, TrendingUp } from 'lucide-react';
+import { Plus, List, Clock, CheckCircle, XCircle, Users, Calendar, MapPin, AlertCircle, RefreshCcw, TrendingUp, QrCode } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
+import ChillButton from '../components/ChillButton';
 
 const OrganizerDashboard = () => {
     const { user } = useAuth();
@@ -13,6 +14,9 @@ const OrganizerDashboard = () => {
     const [activeTab, setActiveTab] = useState('create'); // 'create', 'my-events'
 
     const [editingEventId, setEditingEventId] = useState(null); // If set, we are in EDIT mode
+    const [showAttendeesModal, setShowAttendeesModal] = useState(false);
+    const [selectedEventAttendees, setSelectedEventAttendees] = useState(null);
+
 
     // FORM STATE
     const [formData, setFormData] = useState({
@@ -20,7 +24,13 @@ const OrganizerDashboard = () => {
         description: '',
         location: 'Auditorium',
         capacity: 100,
-        requestNote: ''
+        location: 'Auditorium',
+        capacity: 100,
+        requestNote: '',
+        category: 'Other',
+        coverImage: '',
+        rsvpDeadline: '',
+        rsvpDeadlineTime: ''
     });
 
     // EVENT DATES (Discontinuous or Range)
@@ -49,7 +59,7 @@ const OrganizerDashboard = () => {
                 // or that the list will be refreshed after an optimistic update/backend change.
                 // If the backend doesn't provide pending/rejected events, the 'Edit' button
                 // will only work for events that are already visible (e.g., approved, or if the API changes).
-                const res = await axios.get('http://localhost:5001/api/events');
+                const res = await axios.get('/api/events');
                 let myEvents = res.data.filter(e => e.organizer._id === user.id || e.organizer === user.id);
                 setEvents(myEvents);
             } catch (err) { console.log(err); } finally { setLoading(false); }
@@ -103,7 +113,13 @@ const OrganizerDashboard = () => {
             description: event.description,
             location: event.location,
             capacity: event.capacity,
-            requestNote: event.requestNote || ''
+            location: event.location,
+            capacity: event.capacity,
+            requestNote: event.requestNote || '',
+            category: event.category || 'Other',
+            coverImage: event.galleryImages?.[0] || '',
+            rsvpDeadline: event.rsvpDeadline ? event.rsvpDeadline.split('T')[0] : '',
+            rsvpDeadlineTime: event.rsvpDeadlineTime || ''
         });
 
         // Populate Dates
@@ -132,11 +148,34 @@ const OrganizerDashboard = () => {
     };
 
     const resetForm = () => {
-        setFormData({ title: '', description: '', location: 'Auditorium', capacity: 100, requestNote: '' });
+        setFormData({ title: '', description: '', location: 'Auditorium', capacity: 100, requestNote: '', category: 'Other', coverImage: '', rsvpDeadline: '', rsvpDeadlineTime: '' });
         setEventDates([{ date: '', startTime: '', endTime: '' }]);
         setAgendaItems([]);
         setEditingEventId(null);
     };
+
+    const openAttendeesModal = (event) => {
+        setSelectedEventAttendees(event);
+        setShowAttendeesModal(true);
+    };
+
+    const handleAttendeeStatus = async (userId, status) => {
+        try {
+            const config = { headers: { 'x-auth-token': user.token } };
+            const res = await axios.put(`/api/events/${selectedEventAttendees._id}/attendees`, { userId, status }, config);
+            // Update local state
+            const updatedAttendees = res.data;
+            const updatedEvent = { ...selectedEventAttendees, attendees: updatedAttendees };
+
+            setSelectedEventAttendees(updatedEvent);
+            setEvents(events.map(e => e._id === updatedEvent._id ? updatedEvent : e));
+
+            toast.success(`User ${status}`);
+        } catch (error) {
+            toast.error("Failed to update status");
+        }
+    };
+
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -153,16 +192,27 @@ const OrganizerDashboard = () => {
                 startTime: primaryDate.startTime,
                 endTime: primaryDate.endTime,
                 // If multiple dates, endDate is last date
-                endDate: eventDates.length > 1 ? eventDates[eventDates.length - 1].date : null
+                endDate: eventDates.length > 1 ? eventDates[eventDates.length - 1].date : null,
+                galleryImages: formData.coverImage ? [formData.coverImage] : []
+            };
+
+
+            // Common headers
+            const config = {
+                headers: {
+                    'x-auth-token': user.token
+                }
             };
 
             if (editingEventId) {
                 // UPDATE
-                await axios.put(`http://localhost:5001/api/events/${editingEventId}`, payload);
-                toast.success("Event Updated Successfully!");
+                // If event was approved/admin_approved, editing sends it back to pending
+                payload.status = 'pending';
+                await axios.put(`/api/events/${editingEventId}`, payload, config);
+                toast.success("Event Updated & Resubmitted for Approval!");
             } else {
                 // CREATE
-                await axios.post('http://localhost:5001/api/events', payload);
+                await axios.post('/api/events', payload, config);
                 toast.success("Event Proposed! Awaiting Admin Approval.");
             }
 
@@ -199,6 +249,13 @@ const OrganizerDashboard = () => {
                 <button onClick={() => { setActiveTab('analytics'); cancelEdit(); }} className={`pb-3 px-2 font-medium transition-colors ${activeTab === 'analytics' ? 'text-violet-400 border-b-2 border-violet-500' : 'text-slate-500 hover:text-slate-300'}`}>
                     <TrendingUp className="inline w-4 h-4 mr-2" /> Analytics
                 </button>
+                <div className="ml-auto">
+                    <Link to="/scanner">
+                        <ChillButton variant="secondary" className="!py-1.5 !px-3 text-xs flex items-center gap-2 bg-slate-800 border-slate-700 hover:bg-slate-700">
+                            <QrCode className="w-4 h-4" /> Scan QR
+                        </ChillButton>
+                    </Link>
+                </div>
             </div>
 
             {activeTab === 'create' ? (
@@ -272,10 +329,54 @@ const OrganizerDashboard = () => {
                                 </div>
                             </div>
 
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-800/30 rounded-lg border border-slate-700/50">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-1">RSVP Deadline Date</label>
+                                    <input type="date" name="rsvpDeadline" value={formData.rsvpDeadline} onChange={handleFormChange}
+                                        className="input-dark w-full text-sm" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-1">RSVP Deadline Time</label>
+                                    <input type="time" name="rsvpDeadlineTime" value={formData.rsvpDeadlineTime} onChange={handleFormChange}
+                                        className="input-dark w-full text-sm" />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="requiresApproval"
+                                    checked={formData.requiresApproval || false}
+                                    onChange={(e) => setFormData({ ...formData, requiresApproval: e.target.checked })}
+                                    className="w-5 h-5 rounded border-slate-600 bg-slate-800 text-violet-500 focus:ring-violet-500"
+                                />
+                                <label htmlFor="requiresApproval" className="text-sm font-bold text-slate-300">Requires Manual Approval for Attendees</label>
+                            </div>
+
                             <div>
                                 <label className="block text-sm font-bold text-slate-400 mb-1">Description</label>
                                 <textarea name="description" value={formData.description} onChange={handleFormChange} required rows="3"
                                     className="input-dark w-full" placeholder="Describe the agenda, prerequisites, etc."></textarea>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-1">Category</label>
+                                    <select name="category" value={formData.category} onChange={handleFormChange}
+                                        className="input-dark w-full cursor-pointer">
+                                        <option value="Music">Music</option>
+                                        <option value="Tech">Tech</option>
+                                        <option value="Workshop">Workshop</option>
+                                        <option value="Social">Social</option>
+                                        <option value="Sports">Sports</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-400 mb-1">Cover Image URL</label>
+                                    <input type="url" name="coverImage" value={formData.coverImage} onChange={handleFormChange}
+                                        className="input-dark w-full" placeholder="https://..." />
+                                </div>
                             </div>
 
                             {/* AGENDA BUILDER */}
@@ -350,7 +451,7 @@ const OrganizerDashboard = () => {
                             </div>
                         </form>
                     </div>
-                </div>
+                </div >
             ) : activeTab === 'analytics' ? (
                 <div className="space-y-6 animate-fade-in">
                     {/* STATS OVERVIEW */}
@@ -365,9 +466,9 @@ const OrganizerDashboard = () => {
                         <div className="glass-card p-6 flex items-center gap-4">
                             <div className="p-3 bg-green-600/20 rounded-lg text-green-400"><Users className="w-8 h-8" /></div>
                             <div>
-                                <p className="text-slate-400 text-sm uppercase">Total Attendees</p>
+                                <p className="text-slate-400 text-sm uppercase">Checked In</p>
                                 <h3 className="text-3xl font-bold text-white">
-                                    {events.reduce((acc, curr) => acc + (curr.attendees?.length || 0), 0)}
+                                    {events.reduce((acc, curr) => acc + (curr.attendees?.filter(a => a.markedPresent).length || 0), 0)}
                                 </h3>
                             </div>
                         </div>
@@ -391,7 +492,8 @@ const OrganizerDashboard = () => {
                                     <BarChart data={events.map(e => ({
                                         name: e.title.length > 15 ? e.title.slice(0, 15) + '...' : e.title,
                                         Capacity: e.capacity,
-                                        RSVP: e.attendees?.length || 0
+                                        RSVP: e.attendees?.length || 0,
+                                        CheckedIn: e.attendees?.filter(a => a.markedPresent).length || 0
                                     }))}>
                                         <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
                                         <YAxis stroke="#94a3b8" />
@@ -402,6 +504,7 @@ const OrganizerDashboard = () => {
                                         />
                                         <Bar dataKey="Capacity" fill="#475569" radius={[4, 4, 0, 0]} name="Capacity" />
                                         <Bar dataKey="RSVP" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="RSVP Count" />
+                                        <Bar dataKey="CheckedIn" fill="#10b981" radius={[4, 4, 0, 0]} name="Checked In" />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
@@ -450,10 +553,57 @@ const OrganizerDashboard = () => {
                                         </div>
 
                                         <div className="flex gap-2">
-                                            {event.status === 'approved' || event.status === 'completed' ? (
-                                                <Link to={`/events/${event._id}`} className="btn-secondary text-sm">
-                                                    Manage Event
-                                                </Link>
+                                            {event.requiresApproval && event.attendees?.some(a => a.status === 'pending') && (
+                                                <button
+                                                    onClick={() => openAttendeesModal(event)}
+                                                    className="btn-primary text-sm bg-yellow-500 hover:bg-yellow-600 border-none text-black animate-pulse"
+                                                >
+                                                    Review ({event.attendees.filter(a => a.status === 'pending').length})
+                                                </button>
+                                            )}
+
+                                            {event.status === 'admin_approved' ? (
+                                                <button
+                                                    onClick={async () => {
+                                                        try {
+                                                            await axios.put(`/api/events/${event._id}`, { status: 'approved' });
+                                                            toast.success("Event Published!");
+                                                            setTimeout(() => window.location.reload(), 1000);
+                                                        } catch (e) { toast.error("Failed to publish"); }
+                                                    }}
+                                                    className="btn-primary text-sm bg-green-500 hover:bg-green-600 border-none animate-bounce"
+                                                >
+                                                    Publish Now
+                                                </button>
+                                            ) : event.status === 'approved' || event.status === 'completed' ? (
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={async () => {
+                                                            try {
+                                                                const res = await axios.put(`/api/events/${event._id}/gates`);
+                                                                const updated = events.map(e => e._id === event._id ? { ...e, isGateOpen: res.data.isGateOpen } : e);
+                                                                setEvents(updated);
+                                                                toast.success(res.data.msg);
+                                                            } catch (e) { toast.error("Failed to toggle gates"); }
+                                                        }}
+                                                        className={`btn-primary text-sm border-none w-24 ${event.isGateOpen ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}
+                                                    >
+                                                        {event.isGateOpen ? 'Close Gates' : 'Open Gates'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm("Editing an active event will pause RSVPs and require Admin re-approval. Continue?")) {
+                                                                startEdit(event);
+                                                            }
+                                                        }}
+                                                        className="btn-secondary text-sm border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <Link to={`/events/${event._id}`} className="btn-secondary text-sm">
+                                                        View
+                                                    </Link>
+                                                </div>
                                             ) : (
                                                 <button
                                                     onClick={() => startEdit(event)}
@@ -477,7 +627,53 @@ const OrganizerDashboard = () => {
                     )}
                 </div>
             )}
-        </div>
+
+            {/* ATTENDEES MODAL */}
+            {
+                showAttendeesModal && selectedEventAttendees && (
+                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+                        <div className="bg-slate-900 rounded-2xl border border-white/10 p-6 w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl">
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-xl font-bold text-white">Manage Attendees</h2>
+                                <button onClick={() => setShowAttendeesModal(false)} className="text-slate-400 hover:text-white"><XCircle /></button>
+                            </div>
+
+                            <div className="overflow-y-auto flex-1 space-y-2 pr-2">
+                                {selectedEventAttendees.attendees?.filter(a => a.status === 'pending').length === 0 && (
+                                    <p className="text-slate-500 text-center py-8">No pending requests.</p>
+                                )}
+
+                                {selectedEventAttendees.attendees?.sort((a, b) => (a.status === 'pending' ? -1 : 1)).map((att, idx) => (
+                                    <div key={idx} className={`p-4 rounded-xl flex items-center justify-between ${att.status === 'pending' ? 'bg-white/10 border border-yellow-500/30' : 'bg-white/5 border border-white/5 opacity-60'}`}>
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white">
+                                                {att.user?.avatar ? <img src={att.user.avatar} className="w-full h-full rounded-full object-cover" /> : att.user?.name?.charAt(0)}
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-white">{att.user?.name}</p>
+                                                <p className="text-xs text-slate-400 capitalize">{att.status} • {att.note ? `Note: "${att.note}"` : 'No note'}</p>
+                                            </div>
+                                        </div>
+
+                                        {att.status === 'pending' && (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => handleAttendeeStatus(att.user._id, 'rejected')} className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition"><XCircle className="w-5 h-5" /></button>
+                                                <button onClick={() => handleAttendeeStatus(att.user._id, 'accepted')} className="p-2 hover:bg-green-500/20 text-green-400 rounded-lg transition"><CheckCircle className="w-5 h-5" /></button>
+                                            </div>
+                                        )}
+                                        {att.status !== 'pending' && (
+                                            <span className={`text-xs font-bold px-2 py-1 rounded ${att.status === 'accepted' ? 'text-green-400 bg-green-500/10' : 'text-red-400 bg-red-500/10'}`}>
+                                                {att.status.toUpperCase()}
+                                            </span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 };
 

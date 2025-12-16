@@ -15,6 +15,7 @@ app.use(cors());
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/events', require('./routes/eventRoutes'));
+app.use('/api/users', require('./routes/userRoutes'));
 
 // Basic Route
 app.get('/', (req, res) => {

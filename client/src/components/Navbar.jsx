@@ -1,137 +1,125 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, User, Menu, X, Calendar, Ticket, PlusSquare, BarChart2, Scan, CheckSquare } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Home, Calendar, PlusCircle, LogOut, Menu, X, User, Sun, Moon } from 'lucide-react';
 import { useState } from 'react';
+import ChillButton from './ChillButton';
 
 const Navbar = () => {
     const { user, logout } = useAuth();
+    const { theme, toggleTheme } = useTheme();
+    const location = useLocation();
+    const [isOpen, setIsOpen] = useState(false);
     const navigate = useNavigate();
-    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+    const isActive = (path) => location.pathname === path;
 
     const handleLogout = () => {
         logout();
         navigate('/login');
     };
 
-    if (!user) return null;
-
-    // Navigation Links based on Master Plan
-    const studentLinks = [
-        { name: 'Calendar', path: '/', icon: <Calendar className="w-4 h-4" /> },
-        // { name: 'My Tickets', path: '/my-tickets', icon: <Ticket className="w-4 h-4" /> }, // Future
+    // Strict Role-Based Navigation
+    // Student: Home Only
+    // Organizer: Home, Dashboard
+    // Admin: Home, Admin Control (Dashboard)
+    const navItems = [
+        { path: '/', label: 'Home', icon: Home },
+        ...(user?.role === 'organizer' ? [{ path: '/dashboard', label: 'Dashboard', icon: Calendar }] : []),
+        ...(user?.role === 'admin' ? [{ path: '/admin', label: 'Admin Control', icon: User }] : [])
     ];
-
-    const organizerLinks = [
-        // { name: 'My Events', path: '/dashboard', icon: <Calendar className="w-4 h-4" /> }, // Managed in dashboard
-        { name: 'Dashboard', path: '/dashboard', icon: <Calendar className="w-4 h-4" /> },
-        { name: 'Scanner', path: '/scanner', icon: <Scan className="w-4 h-4" /> },
-    ];
-
-    const adminLinks = [
-        // { name: 'Approvals', path: '/admin', icon: <CheckSquare className="w-4 h-4" /> }, // Is tab inside admin
-        { name: 'Command Center', path: '/admin', icon: <BarChart2 className="w-4 h-4" /> },
-    ];
-
-    const links = user.role === 'admin' ? adminLinks
-        : user.role === 'organizer' ? organizerLinks
-            : studentLinks;
 
     return (
-        <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex justify-between h-16">
-                    {/* LEFT: Brand */}
-                    <div className="flex items-center">
-                        <Link to="/" className="flex items-center gap-2">
-                            <div className="bg-violet-600 p-1.5 rounded-lg">
-                                <Calendar className="w-6 h-6 text-white" />
-                            </div>
-                            <span className="text-xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
-                                CampusEvents
-                            </span>
-                        </Link>
-                    </div>
+        <nav className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-4xl">
+            <motion.div
+                initial={{ y: -100, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="glass-panel px-6 py-3 flex items-center justify-between shadow-2xl shadow-primary/10"
+            >
+                {/* Logo */}
+                <Link to="/" className="text-2xl font-heading font-black text-primary tracking-tighter hover:scale-105 transition-transform">
+                    CAMPUS<span className="text-secondary">CHILL</span>
+                </Link>
 
-                    {/* CENTER: Desktop Links */}
-                    <div className="hidden md:flex items-center space-x-1">
-                        {links.map((link) => (
+                {/* Desktop Nav */}
+                <div className="hidden md:flex items-center gap-2 bg-surface/50 p-1.5 rounded-full border border-white/40">
+                    {navItems.map((item) => {
+                        const Icon = item.icon;
+                        const active = isActive(item.path);
+                        return (
+                            <Link key={item.path} to={item.path} className="relative px-4 py-2 rounded-full transition-colors group">
+                                {active && (
+                                    <motion.div layoutId="nav-pill" className="absolute inset-0 bg-white shadow-sm rounded-full" transition={{ type: "spring", bounce: 0.2, duration: 0.6 }} />
+                                )}
+                                <span className={`relative z-10 flex items-center gap-2 text-sm font-bold ${active ? 'text-primary' : 'text-slate-500 hover:text-slate-800'}`}>
+                                    <Icon className={`w-4 h-4 ${active ? 'text-primary' : 'text-slate-400 group-hover:text-primary transition-colors'}`} />
+                                    {item.label}
+                                </span>
+                            </Link>
+                        )
+                    })}
+                </div>
+
+                {/* Right Actions */}
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={toggleTheme}
+                        className="p-2 rounded-full bg-surface hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 transition-colors"
+                    >
+                        {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                    </button>
+
+                    {user ? (
+                        <div className="flex items-center gap-3">
+                            <Link to={`/profile/${user.id || user._id}`} className="hidden md:flex flex-col items-end leading-tight group">
+                                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-primary transition-colors">{user.name}</span>
+                                <span className="text-[10px] font-bold text-primary uppercase tracking-wider">{user.role}</span>
+                            </Link>
+                            <ChillButton onClick={handleLogout} variant="secondary" className="!px-3 !py-2">
+                                <LogOut className="w-4 h-4" />
+                            </ChillButton>
+                        </div>
+                    ) : (
+                        <div className="flex gap-2">
+                            <Link to="/login">
+                                <ChillButton variant="primary" className="text-sm px-5 py-2">Login</ChillButton>
+                            </Link>
+                            <Link to="/signup">
+                                <ChillButton variant="secondary" className="text-sm px-5 py-2">Sign Up</ChillButton>
+                            </Link>
+                        </div>
+                    )}
+
+                    {/* Mobile Menu Toggle */}
+                    <button onClick={() => setIsOpen(!isOpen)} className="md:hidden p-2 text-slate-600 hover:text-primary transition">
+                        {isOpen ? <X /> : <Menu />}
+                    </button>
+                </div>
+            </motion.div>
+
+            {/* Mobile Menu */}
+            <AnimatePresence>
+                {isOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                        className="absolute top-20 left-0 w-full glass-panel p-4 flex flex-col gap-2 md:hidden"
+                    >
+                        {navItems.map((item) => (
                             <Link
-                                key={link.path}
-                                to={link.path}
-                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-full transition-all"
+                                key={item.path}
+                                to={item.path}
+                                onClick={() => setIsOpen(false)}
+                                className={`p-4 rounded-xl font-bold flex items-center gap-3 ${isActive(item.path) ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-white/50 text-slate-600'}`}
                             >
-                                {link.icon}
-                                {link.name}
+                                <item.icon className="w-5 h-5" /> {item.label}
                             </Link>
                         ))}
-                    </div>
-
-                    {/* RIGHT: Profile & Logout */}
-                    <div className="hidden md:flex items-center gap-4">
-                        <div className="flex items-center gap-2 text-right">
-                            <div className="flex flex-col">
-                                <span className="text-sm font-bold text-white">{user.name}</span>
-                                <span className="text-xs text-violet-400 uppercase tracking-wider">{user.role}</span>
-                            </div>
-                            <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-violet-500 font-bold">
-                                {user.name.charAt(0)}
-                            </div>
-                        </div>
-                        <button
-                            onClick={handleLogout}
-                            className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-full transition-colors"
-                            title="Logout"
-                        >
-                            <LogOut className="w-5 h-5" />
-                        </button>
-                    </div>
-
-                    {/* MOBILE Toggle */}
-                    <div className="flex items-center md:hidden">
-                        <button
-                            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                            className="p-2 text-slate-300 hover:text-white"
-                        >
-                            {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* MOBILE DRAWER */}
-            {isMobileMenuOpen && (
-                <div className="md:hidden bg-slate-900 border-b border-slate-800 px-4 pt-2 pb-4 space-y-2">
-                    {links.map((link) => (
-                        <Link
-                            key={link.path}
-                            to={link.path}
-                            onClick={() => setIsMobileMenuOpen(false)}
-                            className="flex items-center gap-3 px-3 py-3 text-base font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg"
-                        >
-                            {link.icon}
-                            {link.name}
-                        </Link>
-                    ))}
-                    <div className="pt-4 border-t border-slate-800">
-                        <div className="flex items-center gap-3 px-3 py-2">
-                            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-violet-500 font-bold">
-                                {user.name.charAt(0)}
-                            </div>
-                            <div>
-                                <div className="text-sm font-medium text-white">{user.name}</div>
-                                <div className="text-xs text-slate-500">{user.email}</div>
-                            </div>
-                        </div>
-                        <button
-                            onClick={handleLogout}
-                            className="w-full flex items-center gap-3 px-3 py-3 mt-2 text-red-400 hover:bg-slate-800 rounded-lg"
-                        >
-                            <LogOut className="w-5 h-5" />
-                            Logout
-                        </button>
-                    </div>
-                </div>
-            )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </nav>
     );
 };

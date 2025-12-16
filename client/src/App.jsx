@@ -7,39 +7,75 @@ import Navbar from './components/Navbar';
 import StudentDashboard from './pages/StudentDashboard';
 import EventDetails from './pages/EventDetails';
 import Login from './pages/Login'; // Placeholder for now
+import Signup from './pages/Signup';
+import Profile from './pages/Profile';
 
 import OrganizerScanner from './pages/OrganizerScanner';
 import AdminDashboard from './pages/AdminDashboard';
 import OrganizerDashboard from './pages/OrganizerDashboard';
-
-// Protected Route Component (Simple)
-const PrivateRoute = ({ children }) => {
-  const token = localStorage.getItem('token'); // Simple check
-  return token ? children : <Navigate to="/login" />;
-};
+import PublicProfile from './pages/PublicProfile';
+import ProtectedRoute from './components/ProtectedRoute';
+import Background3D from './components/Background3D';
 
 function App() {
-  return (
-    <AuthProvider>
-      <Router>
-        <div className="min-h-screen">
-          <Navbar />
-          <div className="pt-4">
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/" element={<PrivateRoute><StudentDashboard /></PrivateRoute>} />
-              <Route path="/events/:id" element={<PrivateRoute><EventDetails /></PrivateRoute>} />
-              <Route path="/scanner" element={<PrivateRoute><OrganizerScanner /></PrivateRoute>} />
-              <Route path="/admin" element={<PrivateRoute><AdminDashboard /></PrivateRoute>} />
-              <Route path="/dashboard" element={<PrivateRoute><OrganizerDashboard /></PrivateRoute>} />
-              {/* Add more routes as needed */}
-            </Routes>
-          </div>
-          <ToastContainer position="bottom-right" theme="dark" />
-        </div>
-      </Router>
-    </AuthProvider>
-  );
+    return (
+        <AuthProvider>
+            <Router>
+                <div className="min-h-screen relative overflow-hidden">
+                    <Background3D />
+                    <Navbar />
+                    {/* Increased padding to prevent Navbar overlap (Navbar is fixed ~top-6 + height) */}
+                    <div className="pt-32 pb-12 px-4 max-w-7xl mx-auto">
+                        <Routes>
+                            <Route path="/login" element={<Login />} />
+                            <Route path="/signup" element={<Signup />} />
+
+                            {/* Protected Routes */}
+                            <Route path="/profile" element={
+                                <ProtectedRoute>
+                                    <Profile />
+                                </ProtectedRoute>
+                            } />
+
+                            <Route path="/" element={
+                                <ProtectedRoute>
+                                    <StudentDashboard />
+                                </ProtectedRoute>
+                            } />
+
+                            <Route path="/events/:id" element={
+                                <ProtectedRoute>
+                                    <EventDetails />
+                                </ProtectedRoute>
+                            } />
+
+                            {/* Organizer Routes */}
+                            <Route path="/dashboard" element={
+                                <ProtectedRoute roles={['organizer', 'admin']}>
+                                    <OrganizerDashboard />
+                                </ProtectedRoute>
+                            } />
+
+                            <Route path="/scanner" element={
+                                <ProtectedRoute roles={['organizer', 'admin']}>
+                                    <OrganizerScanner />
+                                </ProtectedRoute>
+                            } />
+
+                            {/* Admin Routes */}
+                            <Route path="/admin" element={
+                                <ProtectedRoute roles={['admin']}>
+                                    <AdminDashboard />
+                                </ProtectedRoute>
+                            } />
+                            <Route path="/profile/:id" element={<PublicProfile />} />
+                        </Routes>
+                    </div>
+                    <ToastContainer position="bottom-right" theme="dark" />
+                </div>
+            </Router>
+        </AuthProvider>
+    );
 }
 
 export default App;

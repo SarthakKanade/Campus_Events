@@ -30,6 +30,22 @@ const eventSchema = new mongoose.Schema({
         enum: ['Auditorium', 'Lab A', 'Sports Ground'],
         required: true
     },
+    eventType: {
+        type: String,
+        enum: ['standard', 'notice'],
+        default: 'standard'
+    },
+    category: {
+        type: String,
+        enum: ['Music', 'Tech', 'Workshop', 'Social', 'Sports', 'Other'],
+        default: 'Other'
+    },
+    rsvpStart: { type: Date },
+    rsvpEnd: { type: Date },
+    rsvpDeadline: { type: Date }, // Separate deadline day
+    rsvpDeadlineTime: { type: String }, // Separate deadline time
+    isGateOpen: { type: Boolean, default: false }, // Manual gate control
+    requiresApproval: { type: Boolean, default: false },
     capacity: {
         type: Number,
         required: true,
@@ -62,6 +78,12 @@ const eventSchema = new mongoose.Schema({
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User'
         },
+        status: {
+            type: String,
+            enum: ['pending', 'accepted', 'rejected'],
+            default: 'accepted'
+        },
+        note: String,
         markedPresent: {
             type: Boolean,
             default: false
@@ -77,7 +99,7 @@ const eventSchema = new mongoose.Schema({
     rejectionReason: { type: String }, // Admin -> Organizer
     status: {
         type: String,
-        enum: ['pending', 'approved', 'rejected', 'completed'],
+        enum: ['pending', 'admin_approved', 'approved', 'rejected', 'completed'],
         default: 'pending'
     },
     galleryImages: [{

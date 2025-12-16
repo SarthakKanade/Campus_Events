@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../context/AuthContext';
-import { MapPin, Clock, Calendar as CalendarIcon, ArrowLeft, Users, Zap, CheckCircle, List } from 'lucide-react';
+import { MapPin, Clock, ArrowLeft, Zap, CheckCircle, List } from 'lucide-react';
 import format from 'date-fns/format';
 import { QRCodeCanvas } from 'qrcode.react';
 import ReactStars from "react-rating-stars-component";
 import ImageGallery from "react-image-gallery";
 import "react-image-gallery/styles/css/image-gallery.css";
+import { motion, useScroll, useTransform } from 'framer-motion';
+import confetti from 'canvas-confetti';
+import ChillButton from '../components/ChillButton';
+import SocialProof from '../components/SocialProof';
 
 const EventDetails = () => {
     const { id } = useParams();
@@ -17,10 +21,18 @@ const EventDetails = () => {
     const [event, setEvent] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isAttending, setIsAttending] = useState(false);
+    const [attendeeStatus, setAttendeeStatus] = useState(null); // 'pending', 'accepted', 'rejected'
+
+    // Parallax Scroll
+    const { scrollY } = useScroll();
+    const yRange = useTransform(scrollY, [0, 300], [0, 150]);
+    const opacityRange = useTransform(scrollY, [0, 300], [1, 0]);
 
     // UI State
     const [timeLeft, setTimeLeft] = useState('');
-    const [showEditModal, setShowEditModal] = useState(false); // Restored
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [showRSVPModal, setShowRSVPModal] = useState(false);
+    const [rsvpNote, setRsvpNote] = useState('');
 
     // Polls
     const [newPollQ, setNewPollQ] = useState('');
@@ -48,16 +60,22 @@ const EventDetails = () => {
         }
     }, [event]);
 
-    // Data Fetching & Sync
     useEffect(() => {
         const fetchEvent = async () => {
             try {
-                const res = await axios.get(`http://localhost:5001/api/events/${id}`);
+                const res = await axios.get(`/api/events/${id}`);
                 setEvent(res.data);
-                const attending = res.data.attendees.some(attendee =>
-                    (typeof attendee === 'object' ? attendee._id : attendee) === user.id
+                const myAttendance = res.data.attendees.find(attendee =>
+                    (typeof attendee.user === 'object' ? attendee.user._id : attendee.user) === user.id
                 );
-                setIsAttending(attending);
+
+                if (myAttendance) {
+                    setIsAttending(true);
+                    setAttendeeStatus(myAttendance.status); // 'pending' or 'accepted'
+                } else {
+                    setIsAttending(false);
+                    setAttendeeStatus(null);
+                }
             } catch (error) {
                 console.error("Error fetching event", error);
                 toast.error("Failed to load event details");
@@ -69,19 +87,34 @@ const EventDetails = () => {
         if (user) fetchEvent();
     }, [id, user, navigate]);
 
-
-    // --- ACTION HANDLERS ---
-    const handleRSVP = async () => {
+    const handleRSVP = async (note = '') => {
         try {
-            const res = await axios.post(`http://localhost:5001/api/events/${id}/rsvp`);
-            if (res.data.status === 'attending') {
-                setIsAttending(true);
-                toast.success("RSVP Confirmed!");
-            } else {
+            const config = { headers: { 'x-auth-token': user.token } };
+            const res = await axios.post(`/api/events/${id}/rsvp`, { note }, config);
+
+            if (res.data.status === 'not_attending') {
                 setIsAttending(false);
+                setAttendeeStatus(null);
                 toast.info("RSVP Cancelled");
+            } else {
+                setIsAttending(true);
+                setAttendeeStatus(res.data.status);
+
+                if (res.data.status === 'pending') {
+                    toast.info("Request sent! Awaiting approval.");
+                } else {
+                    toast.success("RSVP Confirmed!");
+                    confetti({
+                        particleCount: 100,
+                        spread: 70,
+                        origin: { y: 0.6 },
+                        colors: ['#6366f1', '#fb7185', '#34d399']
+                    });
+                }
             }
+
             setEvent(prev => ({ ...prev, attendees: res.data.attendees }));
+            setShowRSVPModal(false);
         } catch (error) {
             toast.error(error.response?.data?.msg || "Action failed");
         }
@@ -89,9 +122,10 @@ const EventDetails = () => {
 
     const updateEventStatus = async (status) => {
         try {
-            await axios.put(`http://localhost:5001/api/events/${id}`, { status });
+            const config = { headers: { 'x-auth-token': user.token } };
+            await axios.put(`/api/events/${id}`, { status }, config);
             toast.success(`Event marked as ${status}`);
-            const res = await axios.get(`http://localhost:5001/api/events/${id}`);
+            const res = await axios.get(`/api/events/${id}`);
             setEvent(res.data);
         } catch (e) { toast.error("Status Update Failed"); }
     };
@@ -99,9 +133,10 @@ const EventDetails = () => {
     const updateGallery = async (urlsString) => {
         try {
             const galleryImages = urlsString.split(',').map(s => s.trim()).filter(s => s);
-            await axios.put(`http://localhost:5001/api/events/${id}`, { galleryImages });
+            const config = { headers: { 'x-auth-token': user.token } };
+            await axios.put(`/api/events/${id}`, { galleryImages }, config);
             toast.success("Gallery Updated");
-            const res = await axios.get(`http://localhost:5001/api/events/${id}`);
+            const res = await axios.get(`/api/events/${id}`);
             setEvent(res.data);
         } catch (e) { toast.error("Gallery Update Failed"); }
     };
@@ -109,110 +144,113 @@ const EventDetails = () => {
     const createPoll = async () => {
         try {
             const optionsArray = newPollOptions.split(',').map(s => s.trim());
-            await axios.post(`http://localhost:5001/api/events/${id}/polls`, { question: newPollQ, options: optionsArray });
+            const config = { headers: { 'x-auth-token': user.token } };
+            await axios.post(`/api/events/${id}/polls`, { question: newPollQ, options: optionsArray }, config);
             toast.success("Poll Created!");
             setNewPollQ(''); setNewPollOptions('');
-            const res = await axios.get(`http://localhost:5001/api/events/${id}`);
+            const res = await axios.get(`/api/events/${id}`);
             setEvent(res.data);
         } catch (e) { toast.error("Poll Failed"); }
     };
 
     const votePoll = async (pollId, optionIndex) => {
         try {
-            await axios.post(`http://localhost:5001/api/events/${id}/vote`, { pollId, optionIndex });
+            const config = { headers: { 'x-auth-token': user.token } };
+            await axios.post(`/api/events/${id}/vote`, { pollId, optionIndex }, config);
             toast.success("Voted!");
-            const res = await axios.get(`http://localhost:5001/api/events/${id}`);
+            const res = await axios.get(`/api/events/${id}`);
             setEvent(res.data);
         } catch (e) { toast.error(e.response?.data?.msg || "Vote Failed"); }
     }
 
     const submitFeedback = async (newRating) => {
         try {
-            // Hardcoded comment for speed in this iteration
-            await axios.post(`http://localhost:5001/api/events/${id}/feedback`, { rating: newRating, comment: "User Rating" });
+            const config = { headers: { 'x-auth-token': user.token } };
+            await axios.post(`/api/events/${id}/feedback`, { rating: newRating, comment: "User Rating" }, config);
             toast.success("Thanks for your feedback!");
-            const res = await axios.get(`http://localhost:5001/api/events/${id}`);
+            const res = await axios.get(`/api/events/${id}`);
             setEvent(res.data);
         } catch (error) { toast.error(error.response?.data?.msg || "Failed to submit"); }
     };
 
-    if (loading) return <div className="flex h-screen items-center justify-center bg-slate-900 text-violet-500">Loading...</div>;
+    if (loading) return <div className="flex h-screen items-center justify-center text-primary">Loading...</div>;
     if (!event) return null;
 
     const seatsLeft = event.capacity - event.attendees.length;
     const isFull = seatsLeft <= 0;
 
+    // Check RSVP Deadline
+    const isPastDeadline = event.rsvpDeadline ? new Date() > new Date(`${format(new Date(event.rsvpDeadline), 'yyyy-MM-dd')}T${event.rsvpDeadlineTime || '23:59'}`) : false;
+
     return (
-        <div className="pt-20 min-h-screen pb-12">
+        <div className="min-h-screen pb-12">
 
-            {/* HERO SECTION */}
-            <div className="relative h-64 md:h-80 w-full overflow-hidden mb-8">
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent z-10"></div>
-                {/* Placeholder Gradient if no image (real app would use event.image) */}
-                <div className="absolute inset-0 bg-gradient-to-r from-violet-900 via-indigo-900 to-slate-900 opacity-80"></div>
+            {/* PARALLAX HERO SECTION */}
+            <div className="relative h-[50vh] w-full overflow-hidden">
+                <motion.div
+                    style={{ y: yRange, opacity: opacityRange }}
+                    className="absolute inset-0 z-0"
+                >
+                    <img
+                        src={'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&q=80&w=2000'} // Placeholder
+                        alt="Event Banner"
+                        className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-background"></div>
+                </motion.div>
 
-                <div className="absolute bottom-0 left-0 w-full z-20 max-w-7xl mx-auto px-4 pb-8">
-                    <button onClick={() => navigate('/')} className="mb-4 flex items-center gap-1 text-slate-400 hover:text-white transition">
-                        <ArrowLeft className="w-4 h-4" /> Back to Calendar
+                <div className="absolute top-8 left-4 z-20">
+                    <button onClick={() => navigate('/')} className="bg-white/20 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/40 transition">
+                        <ArrowLeft className="w-6 h-6" />
                     </button>
-                    <div className="flex items-end gap-6">
-                        {/* Date Badge */}
-                        <div className="hidden md:flex flex-col items-center justify-center bg-slate-800/80 backdrop-blur-md border border-slate-700 rounded-xl p-4 w-24 h-24 text-center">
-                            <span className="text-violet-400 font-bold uppercase text-sm">{format(new Date(event.date), 'MMM')}</span>
-                            <span className="text-4xl font-bold text-white">{format(new Date(event.date), 'dd')}</span>
-                        </div>
+                </div>
 
-                        <div>
-                            <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold mb-2 ${event.status === 'completed' ? 'bg-green-900/50 text-green-400' : 'bg-violet-600/20 text-violet-400'}`}>
-                                {event.status === 'completed' ? 'COMPLETED' : 'UPCOMING'}
-                            </span>
-                            <h1 className="text-3xl md:text-5xl font-bold text-white mb-2">{event.title}</h1>
-                            <div className="flex items-center gap-4 text-slate-300">
-                                <span className="flex items-center gap-1"><MapPin className="w-4 h-4 text-violet-500" /> {event.location}</span>
-                                <span className="flex items-center gap-1"><Clock className="w-4 h-4 text-violet-500" /> {event.startTime} - {event.endTime}</span>
-                            </div>
+                <div className="absolute bottom-0 left-0 w-full z-10 max-w-7xl mx-auto px-6 pb-12">
+                    <motion.div
+                        initial={{ y: 50, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ delay: 0.2 }}
+                    >
+                        <span className={`inline-block px-4 py-1.5 rounded-full text-xs font-bold mb-4 uppercase tracking-widest bg-white text-slate-900 shadow-lg`}>
+                            {event.status === 'completed' ? 'Completed' : 'Upcoming Experience'}
+                        </span>
+                        <h1 className="text-4xl md:text-6xl font-heading font-black text-slate-800 mb-2 drop-shadow-sm">{event.title}</h1>
+                        <div className="flex flex-wrap items-center gap-6 text-slate-700 font-medium text-lg">
+                            <span className="flex items-center gap-2"><MapPin className="w-5 h-5 text-primary" /> {event.location}</span>
+                            <span className="flex items-center gap-2"><Clock className="w-5 h-5 text-primary" /> {format(new Date(event.date), 'MMM do')} • {event.startTime}</span>
                         </div>
-                    </div>
+                    </motion.div>
                 </div>
             </div>
 
-            <div className="max-w-7xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-3 gap-12 -mt-8 relative z-20">
 
-                {/* LEFT COLUMN: Main Info */}
+                {/* LEFT COLUMN */}
                 <div className="lg:col-span-2 space-y-8">
 
                     {/* Description */}
-                    <div className="glass-card p-6 md:p-8">
-                        <h3 className="text-xl font-bold text-white mb-4 border-b border-slate-700 pb-2">About Event</h3>
-                        <p className="text-slate-300 leading-relaxed whitespace-pre-line text-lg">
+                    <div className="glass-panel p-8">
+                        <h3 className="text-2xl font-heading font-bold text-slate-800 mb-4">The Vibe</h3>
+                        <p className="text-slate-600 leading-relaxed text-lg whitespace-pre-line">
                             {event.description}
                         </p>
                     </div>
 
-                    {/* AGENDA TIMELINE */}
+                    {/* AGENDA */}
                     {event.agenda && event.agenda.length > 0 && (
-                        <div className="glass-card p-6 md:p-8 animate-fade-in-up delay-100">
-                            <h3 className="text-xl font-bold text-white mb-8 flex items-center gap-2 border-b border-slate-700 pb-2">
-                                <List className="w-5 h-5 text-violet-500" /> Event Schedule
+                        <div className="glass-panel p-8">
+                            <h3 className="text-2xl font-heading font-bold text-slate-800 mb-6 flex items-center gap-2">
+                                <List className="w-6 h-6 text-primary" /> Lineup
                             </h3>
-                            <div className="relative border-l-2 border-white/10 ml-3 space-y-10 pl-8 py-2">
+                            <div className="space-y-6 pl-4 border-l-2 border-slate-200">
                                 {event.agenda.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')).map((item, idx) => (
-                                    <div key={idx} className="relative group">
-                                        {/* Dot */}
-                                        <div className="absolute -left-[41px] top-1 w-5 h-5 rounded-full bg-slate-900 border-2 border-violet-500 group-hover:bg-violet-500 transition-colors shadow-[0_0_10px_rgba(139,92,246,0.5)]"></div>
-
-                                        <div className="flex flex-col sm:flex-row sm:items-baseline gap-2 mb-1">
-                                            <span className="font-mono text-violet-400 font-bold bg-violet-500/10 px-2 py-0.5 rounded border border-violet-500/20 text-sm">
-                                                {item.startTime || 'Time TBD'} {item.endTime ? `- ${item.endTime}` : ''}
-                                            </span>
-                                            <h4 className="text-lg font-bold text-white group-hover:text-violet-300 transition">{item.title}</h4>
-                                        </div>
-                                        {item.date && (
-                                            <div className="text-xs text-slate-500 uppercase tracking-widest mb-2 font-bold">
-                                                {new Date(item.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                            </div>
-                                        )}
-                                        <p className="text-slate-400 text-sm leading-relaxed">{item.description}</p>
+                                    <div key={idx} className="relative pl-6">
+                                        <div className="absolute -left-[21px] top-1.5 w-4 h-4 rounded-full bg-white border-4 border-primary"></div>
+                                        <h4 className="text-lg font-bold text-slate-800">{item.title}</h4>
+                                        <span className="text-sm font-bold text-primary block mb-1">
+                                            {item.startTime} - {item.endTime}
+                                        </span>
+                                        <p className="text-slate-500">{item.description}</p>
                                     </div>
                                 ))}
                             </div>
@@ -221,19 +259,18 @@ const EventDetails = () => {
 
                     {/* POLLS */}
                     {event.status !== 'completed' && (
-                        <div className="glass-card p-6 md:p-8">
-                            <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
-                                <h3 className="text-xl font-bold text-white flex items-center gap-2"><Zap className="text-yellow-400 w-5 h-5" /> Live Polls</h3>
-                                {user.role === 'organizer' && <span className="text-xs text-slate-500">Organizer View</span>}
+                        <div className="glass-panel p-8 bg-gradient-to-br from-white to-primary/5">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-2xl font-heading font-bold text-slate-800 flex items-center gap-2"><Zap className="text-yellow-500 w-6 h-6" /> Live Pulse</h3>
                             </div>
 
-                            {/* Create Poll (Organizer) */}
+                            {/* Creator Tools */}
                             {(user.role === 'organizer' || user.role === 'admin') && (
-                                <div className="bg-slate-800/50 p-4 rounded-lg mb-6 border border-slate-700 border-dashed">
-                                    <input className="input-dark w-full mb-2" placeholder="Ask a question..." value={newPollQ} onChange={e => setNewPollQ(e.target.value)} />
+                                <div className="bg-white/50 p-4 rounded-xl mb-6 border-2 border-dashed border-slate-300">
+                                    <input className="input-chill mb-2" placeholder="Ask the crowd..." value={newPollQ} onChange={e => setNewPollQ(e.target.value)} />
                                     <div className="flex gap-2">
-                                        <input className="input-dark w-full" placeholder="Options (comma sep)" value={newPollOptions} onChange={e => setNewPollOptions(e.target.value)} />
-                                        <button onClick={createPoll} className="btn-secondary whitespace-nowrap">Launch</button>
+                                        <input className="input-chill" placeholder="Options (comma sep)" value={newPollOptions} onChange={e => setNewPollOptions(e.target.value)} />
+                                        <ChillButton onClick={createPoll} variant="secondary" className="py-2 text-sm">Post</ChillButton>
                                     </div>
                                 </div>
                             )}
@@ -241,178 +278,202 @@ const EventDetails = () => {
                             {event.polls && event.polls.length > 0 ? (
                                 <div className="space-y-4">
                                     {event.polls.map(poll => (
-                                        <div key={poll._id} className="bg-slate-900/50 border border-slate-700 rounded-xl p-4">
-                                            <h4 className="font-bold text-white mb-3">{poll.question}</h4>
+                                        <div key={poll._id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                                            <h4 className="font-bold text-slate-800 mb-4 text-lg">{poll.question}</h4>
                                             <div className="space-y-3">
                                                 {poll.options.map((opt, idx) => (
-                                                    <div key={idx} className="relative group cursor-pointer" onClick={() => !poll.voters.includes(user.id) && votePoll(poll._id, idx)}>
-                                                        <div className="absolute inset-0 bg-violet-600/20 rounded-lg transition-all duration-500" style={{ width: `${(opt.votes / (poll.voters.length || 1)) * 100}%` }}></div>
-                                                        <div className="relative p-2 flex justify-between items-center z-10 px-3">
-                                                            <span className="text-sm font-medium text-slate-200 group-hover:text-white transition">{opt.text}</span>
-                                                            <span className="text-xs font-bold text-violet-300">{opt.votes}</span>
+                                                    <div key={idx} className="relative h-10 group cursor-pointer rounded-lg bg-slate-100 overflow-hidden" onClick={() => !poll.voters.includes(user.id) && votePoll(poll._id, idx)}>
+                                                        <motion.div
+                                                            initial={{ width: 0 }}
+                                                            animate={{ width: `${(opt.votes / (poll.voters.length || 1)) * 100}%` }}
+                                                            className="absolute inset-y-0 left-0 bg-primary/20"
+                                                        />
+                                                        <div className="absolute inset-0 flex justify-between items-center px-4">
+                                                            <span className="font-medium text-slate-700 z-10">{opt.text}</span>
+                                                            <span className="font-bold text-primary">{opt.votes}</span>
                                                         </div>
                                                     </div>
                                                 ))}
                                             </div>
-                                            <div className="mt-2 text-right text-xs text-slate-500">{poll.voters.length} votes total</div>
+                                            <div className="mt-3 text-right text-xs font-bold text-slate-400 uppercase tracking-widest">{poll.voters.length} votes</div>
                                         </div>
                                     ))}
                                 </div>
                             ) : (
-                                <p className="text-slate-500 italic">No active polls yet.</p>
+                                <p className="text-slate-500 italic text-center">No active polls yet.</p>
                             )}
                         </div>
                     )}
 
-                    {/* QR TICKET (Attending) */}
-                    {isAttending && event.status !== 'completed' && (
-                        <div className="glass-card p-8 flex flex-col items-center text-center border-violet-500/30 shadow-violet-500/10">
-                            <div className="bg-white p-4 rounded-xl shadow-lg mb-4">
-                                <QRCodeCanvas value={JSON.stringify({ eventId: event._id, userId: user.id })} size={200} />
+                    {/* QR TICKET: Only if accepted */}
+                    {isAttending && attendeeStatus === 'accepted' && event.status !== 'completed' && (
+                        <div className="glass-panel p-8 flex flex-col items-center text-center border-2 border-dashed border-primary/30">
+                            <div className="bg-white p-4 rounded-2xl shadow-xl mb-6 transform rotate-2">
+                                <QRCodeCanvas value={JSON.stringify({ eventId: event._id, userId: user.id })} size={180} />
                             </div>
-                            <h3 className="text-2xl font-bold text-white mb-1">Your Digital Ticket</h3>
-                            <p className="text-slate-400 text-sm mb-4">Show this at the entrance.</p>
-                            <p className="font-mono text-xs text-slate-600 bg-slate-900 px-3 py-1 rounded">ID: {user.id}</p>
-                        </div>
-                    )}
-
-                    {/* COMPLETED: Gallery & Reviews */}
-                    {event.status === 'completed' && (
-                        <div className="space-y-8 animate-fade-in">
-                            {/* Gallery */}
-                            {event.galleryImages?.length > 0 && (
-                                <div className="glass-card p-6">
-                                    <h3 className="text-xl font-bold text-white mb-4">Highlights Gallery</h3>
-                                    <ImageGallery items={event.galleryImages.map(url => ({ original: url, thumbnail: url }))} showPlayButton={false} />
-                                </div>
-                            )}
-
-                            {/* Feedback */}
-                            {isAttending && (
-                                <div className="glass-card p-6 text-center">
-                                    <h3 className="text-xl font-bold text-white mb-2">Rate this Event</h3>
-                                    <div className="flex justify-center">
-                                        <ReactStars count={5} onChange={submitFeedback} size={40} activeColor="#8b5cf6" color="#334155" />
-                                    </div>
-                                    <div className="mt-4 flex flex-col items-center">
-                                        <div className="text-4xl font-bold text-white">{event.averageRating?.toFixed(1) || "-"}</div>
-                                        <div className="text-xs text-slate-400 uppercase tracking-widest">Average Rating</div>
-                                    </div>
-                                </div>
-                            )}
+                            <h3 className="text-2xl font-bold text-slate-800 mb-2">Gate Pass</h3>
+                            <p className="text-slate-500 mb-4">Scan this to enter the venue.</p>
+                            <span className="font-mono text-xs text-slate-400 bg-slate-100 px-3 py-1 rounded-full">ID: {user.id.slice(-6)}</span>
                         </div>
                     )}
                 </div>
 
-                {/* RIGHT COLUMN: Sticky Sidebar */}
+                {/* RIGHT COLUMN */}
                 <div className="lg:col-span-1">
-                    <div className="sticky top-24 space-y-6">
+                    <div className="sticky top-28 space-y-6">
 
-                        {/* Action Box */}
-                        <div className="glass-card p-6 border-t-4 border-violet-500">
-                            {/* Countdown */}
+                        {/* RSVP Card */}
+                        <div className="glass-panel p-6 border-t-8 border-primary relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-10">
+                                <Clock className="w-24 h-24 text-primary" />
+                            </div>
+
                             {event.status !== 'completed' && timeLeft && (
-                                <div className="text-center mb-6 pb-6 border-b border-slate-700">
-                                    <p className="text-xs uppercase text-slate-400 tracking-widest mb-1">Starts In</p>
-                                    <p className="text-3xl font-mono font-bold text-white">{timeLeft}</p>
+                                <div className="text-center mb-8 relative z-10">
+                                    <p className="text-xs uppercase text-slate-400 tracking-widest font-bold mb-2">Happening In</p>
+                                    <p className="text-3xl font-heading font-black text-slate-800">{timeLeft}</p>
                                 </div>
                             )}
 
-                            {/* Capacity Bar */}
-                            <div className="mb-6">
-                                <div className="flex justify-between text-sm mb-1">
-                                    <span className="text-slate-400">Capacity</span>
-                                    <span className={isFull ? "text-red-400 font-bold" : "text-violet-400 font-bold"}>
-                                        {isFull ? "SOLD OUT" : `${seatsLeft} seats left`}
+                            <div className="mb-8 relative z-10">
+                                <div className="flex justify-between text-sm font-bold mb-2">
+                                    <span className="text-slate-500">Occupancy</span>
+                                    <span className={isFull ? "text-red-500" : "text-primary"}>
+                                        {isFull ? "SOLD OUT" : `${seatsLeft} spots left`}
                                     </span>
                                 </div>
-                                <div className="w-full bg-slate-700 rounded-full h-2">
-                                    <div
-                                        className={`h-2 rounded-full ${isFull ? 'bg-red-500' : 'bg-violet-500'}`}
-                                        style={{ width: `${(event.attendees.length / event.capacity) * 100}%` }}
-                                    ></div>
+                                <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${(event.attendees.length / event.capacity) * 100}%` }}
+                                        className={`h-full rounded-full ${isFull ? 'bg-red-500' : 'bg-primary'}`}
+                                    ></motion.div>
                                 </div>
                             </div>
 
-                            {/* Main Button */}
-                            <button
-                                onClick={handleRSVP}
-                                disabled={event.status === 'completed' || (isFull && !isAttending)}
-                                className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition transform active:scale-95 flex items-center justify-center gap-2
-                                    ${event.status === 'completed' ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                                        : isAttending ? 'bg-slate-800 border-2 border-green-500 text-green-500 hover:bg-green-500/10'
-                                            : isFull ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                                                : 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-500 hover:to-indigo-500'}`}
+                            <ChillButton
+                                onClick={() => {
+                                    if (isAttending) {
+                                        handleRSVP(); // Cancel
+                                    } else {
+                                        if (event.requiresApproval) {
+                                            setShowRSVPModal(true);
+                                        } else {
+                                            handleRSVP();
+                                        }
+                                    }
+                                }}
+
+                                disabled={event.status === 'completed' || (isFull && !isAttending) || (isPastDeadline && !isAttending)}
+                                variant={event.status === 'completed' || (isPastDeadline && !isAttending) || isFull ? 'secondary' : isAttending ? 'accent' : 'primary'}
+                                className="w-full"
                             >
                                 {event.status === 'completed' ? 'Event Ended'
-                                    : isAttending ? <><CheckCircle className="w-5 h-5" /> You are Going</>
-                                        : isFull ? 'Waitlist Only'
-                                            : 'RSVP NOW'}
-                            </button>
-
-                            {isAttending && event.status !== 'completed' && (
-                                <p className="text-xs text-center text-slate-500 mt-4">
-                                    You can cancel your reservation by clicking again.
-                                </p>
-                            )}
+                                    : (isPastDeadline && !isAttending) ? 'RSVP Closed'
+                                        : isAttending ? (
+                                            attendeeStatus === 'pending' ? <><Clock className="w-5 h-5" /> Pending...</>
+                                                : <><CheckCircle className="w-5 h-5" /> Going!</>
+                                        )
+                                            : isFull ? 'Waitlist Full'
+                                                : event.requiresApproval ? 'Request to Join'
+                                                    : 'RSVP Now'}
+                            </ChillButton>
                         </div>
 
-                        {/* ORGANIZER CONTROLS */}
+                        {/* Social Proof */}
+                        <div className="glass-panel p-6">
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Who's Coming</h4>
+                            <SocialProof attendees={event.attendees} max={5} />
+                        </div>
+
+                        {/* Organizer Admin */}
                         {(user.role === 'organizer' || user.role === 'admin') && (
-                            <div className="glass-card p-6">
-                                <h4 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Organizer Tools</h4>
+                            <div className="glass-panel p-6">
+                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Control Deck</h4>
                                 <button
                                     onClick={() => setShowEditModal(true)}
-                                    className="w-full btn-secondary mb-2 text-sm"
+                                    className="w-full py-2 rounded-lg border-2 border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition"
                                 >
-                                    Manage Event Status
+                                    Update Status
                                 </button>
-                                <p className="text-xs text-slate-500 text-center">
-                                    Mark as completed to unlock the gallery and feedback.
-                                </p>
                             </div>
                         )}
                     </div>
                 </div>
+
             </div>
 
-            {/* EDIT MODAL (Simplified) */}
-            {showEditModal && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60]">
-                    <div className="glass-card p-8 w-full max-w-lg relative bg-slate-900">
-                        <h2 className="text-2xl font-bold text-white mb-6">Update Event</h2>
+            {/* EDIT MODAL */}
+            {
+                showEditModal && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl"
+                        >
+                            <h2 className="text-2xl font-bold text-slate-800 mb-6">Manage Event</h2>
 
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-sm font-bold text-slate-400 block mb-1">Status</label>
-                                <select
-                                    className="input-dark w-full"
-                                    defaultValue={event.status}
-                                    onChange={(e) => updateEventStatus(e.target.value)}
-                                >
-                                    <option value="approved">Active (Approved)</option>
-                                    <option value="completed">Completed (End Event)</option>
-                                </select>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-sm font-bold text-slate-700 block mb-1">Status</label>
+                                    <select
+                                        className="input-chill"
+                                        defaultValue={event.status}
+                                        onChange={(e) => updateEventStatus(e.target.value)}
+                                    >
+                                        <option value="approved">Active</option>
+                                        <option value="completed">Completed</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-bold text-slate-700 block mb-1">Gallery URLs</label>
+                                    <textarea
+                                        className="input-chill min-h-[100px]"
+                                        placeholder="https://img1.jpg, https://img2.jpg"
+                                        defaultValue={event.galleryImages?.join(', ')}
+                                        onBlur={(e) => updateGallery(e.target.value)}
+                                    ></textarea>
+                                </div>
                             </div>
-                            <div>
-                                <label className="text-sm font-bold text-slate-400 block mb-1">Gallery URLs</label>
-                                <textarea
-                                    className="input-dark w-full h-32 text-xs font-mono"
-                                    placeholder="https://img1.jpg, https://img2.jpg"
-                                    defaultValue={event.galleryImages?.join(', ')}
-                                    onBlur={(e) => updateGallery(e.target.value)}
-                                ></textarea>
-                            </div>
-                        </div>
 
-                        <div className="mt-8 flex justify-end">
-                            <button onClick={() => setShowEditModal(false)} className="px-6 py-2 text-slate-400 hover:text-white font-bold transition">Close</button>
-                        </div>
+                            <div className="mt-8 flex justify-end">
+                                <button onClick={() => setShowEditModal(false)} className="px-6 py-2 text-slate-500 font-bold hover:text-slate-800 transition">Close</button>
+                            </div>
+                        </motion.div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
-        </div>
+            {/* RSVP NOTE MODAL */}
+            {
+                showRSVPModal && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
+                        >
+                            <h2 className="text-2xl font-bold text-slate-800 mb-2">Request to Join</h2>
+                            <p className="text-slate-500 mb-6">The organizer needs to approve your request. Add a note?</p>
+
+                            <textarea
+                                className="input-chill min-h-[100px] mb-6"
+                                placeholder="I'm super interested because..."
+                                value={rsvpNote}
+                                onChange={(e) => setRsvpNote(e.target.value)}
+                            ></textarea>
+
+                            <div className="flex justify-end gap-3">
+                                <button onClick={() => setShowRSVPModal(false)} className="px-6 py-2 text-slate-500 font-bold hover:text-slate-800 transition">Cancel</button>
+                                <ChillButton onClick={() => handleRSVP(rsvpNote)} variant="primary" className="px-6">Send Request</ChillButton>
+                            </div>
+                        </motion.div>
+                    </div>
+                )
+            }
+
+        </div >
     );
 };
 
