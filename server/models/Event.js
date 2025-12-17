@@ -27,7 +27,6 @@ const eventSchema = new mongoose.Schema({
     },
     location: {
         type: String,
-        enum: ['Auditorium', 'Lab A', 'Sports Ground'],
         required: true
     },
     eventType: {

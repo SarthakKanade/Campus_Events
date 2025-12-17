@@ -10,6 +10,10 @@ router.get('/', async (req, res) => {
     try {
         const { category } = req.query;
         let query = {};
+
+        // Show only fully published/active events to the public
+        query.status = 'approved';
+
         if (category && category !== 'All') {
             query.category = category;
         }
@@ -17,6 +21,25 @@ router.get('/', async (req, res) => {
         const events = await Event.find(query)
             .sort({ date: 1 })
             .populate('attendees.user', 'name avatar'); // Populate for Social Proof
+        res.json(events);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// @route   GET api/events/my
+// @desc    Get logged-in user's events (Organizer)
+// @access  Private
+router.get('/my', async (req, res) => {
+    const token = req.header('x-auth-token');
+    if (!token) return res.status(401).json({ msg: 'No token' });
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+        // Find events where organizer is the user
+        const events = await Event.find({ organizer: decoded.id }).sort({ date: 1 })
+            .populate('attendees.user', 'name avatar');
         res.json(events);
     } catch (err) {
         console.error(err.message);
@@ -148,9 +171,42 @@ router.put('/:id/attendees', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
+// @route   POST api/events/notice
+// @desc    Create a Notice (Admin Only)
+// @access  Private
+router.post('/notice', async (req, res) => {
+    try {
+        const token = req.header('x-auth-token');
+        if (!token) return res.status(401).json({ msg: 'No token' });
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
 
-// @route   POST api/events
-// @desc    Create a new event
+        // Ensure Admin
+        if (decoded.role !== 'admin') {
+            return res.status(403).json({ msg: 'Admin privileges required' });
+        }
+
+        const newNotice = new Event({
+            title: req.body.title,
+            description: req.body.description,
+            eventType: 'notice',
+            date: req.body.date || new Date(),
+            organizer: decoded.id,
+            status: 'approved', // Auto-publish notices immediately
+            isGateOpen: false, // Notices are just info, no gates
+            location: req.body.location || 'Campus Wide',
+            capacity: 99999,
+            startTime: '00:00',
+            endTime: '23:59'
+        });
+
+        const savedNotice = await newNotice.save();
+        res.json(savedNotice);
+
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
 // @access  Private
 router.post('/', async (req, res) => {
     const token = req.header('x-auth-token');
@@ -298,8 +354,6 @@ router.post('/scan', async (req, res) => {
     }
 });
 
-module.exports = router;
-
 // @route   PUT api/events/:id/gates
 // @desc    Toggle Gate Status (Open/Close)
 // @access  Private (Organizer)
@@ -316,3 +370,31 @@ router.put('/:id/gates', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
+
+// @route   DELETE api/events/:id
+// @desc    Delete an event or notice
+// @access  Private (Admin/Organizer)
+router.delete('/:id', async (req, res) => {
+    const token = req.header('x-auth-token');
+    if (!token) return res.status(401).json({ msg: 'No token' });
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+        const event = await Event.findById(req.params.id);
+
+        if (!event) return res.status(404).json({ msg: 'Event not found' });
+
+        // Check authorization (Admin or Owner)
+        if (decoded.role !== 'admin' && event.organizer.toString() !== decoded.id) {
+            return res.status(401).json({ msg: 'User not authorized' });
+        }
+
+        await event.deleteOne();
+        res.json({ msg: 'Event removed' });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+module.exports = router;

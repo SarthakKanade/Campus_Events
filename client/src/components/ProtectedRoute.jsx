@@ -5,7 +5,6 @@ const ProtectedRoute = ({ children, roles = [] }) => {
     const { user, loading } = useAuth();
 
     if (loading) {
-        // You might want a better loading spinner here
         return <div className="min-h-screen flex items-center justify-center text-primary font-bold">Loading...</div>;
     }
 

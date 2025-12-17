@@ -6,7 +6,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import axios from 'axios';
 
 // Set default base URL for production/dev
-axios.defaults.baseURL = import.meta.env.VITE_API_URL || '';
+axios.defaults.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

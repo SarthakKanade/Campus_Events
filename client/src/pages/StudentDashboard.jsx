@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { Loader, Search, LayoutGrid, Calendar as CalendarIcon, CheckCircle, User } from 'lucide-react';
@@ -83,33 +83,35 @@ const StudentDashboard = () => {
     }, [searchTerm, searchScope]);
 
 
-    // Derived Data
-    const filteredEvents = events.filter(e => {
-        if (searchScope === 'organizers') return false; // Don't show events in organizer mode
-        const matchesSearch = e.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            e.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            // Search by organizer name if populated
-            (e.organizer?.name && e.organizer.name.toLowerCase().includes(searchTerm.toLowerCase()));
-        return matchesSearch;
-    });
+    // Derived Data - Memoized for Performance
+    const filteredEvents = useMemo(() => {
+        return events.filter(e => {
+            if (searchScope === 'organizers') return false; // Don't show events in organizer mode
+            const matchesSearch = e.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                e.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                // Search by organizer name if populated
+                (e.organizer?.name && e.organizer.name.toLowerCase().includes(searchTerm.toLowerCase()));
+            return matchesSearch;
+        });
+    }, [events, searchScope, searchTerm]);
 
     // Calendar Events
-    const calendarEvents = filteredEvents.map(event => ({
+    const calendarEvents = useMemo(() => filteredEvents.map(event => ({
         id: event._id,
         title: event.title,
         start: new Date(`${format(new Date(event.date), 'yyyy-MM-dd')}T${event.startTime}`),
         end: new Date(`${format(new Date(event.date), 'yyyy-MM-dd')}T${event.endTime}`),
         resource: event
-    }));
+    })), [filteredEvents]);
 
     // Recommended Events (From Following)
-    const recommendedEvents = events.filter(e => {
+    const recommendedEvents = useMemo(() => events.filter(e => {
         const orgId = e.organizer?._id || e.organizer;
         return myFollowing.includes(orgId) && new Date(e.date) >= new Date();
-    });
+    }), [events, myFollowing]);
 
     // Live/Gates Open Events Logic
-    const liveEvents = events.filter(e => {
+    const liveEvents = useMemo(() => events.filter(e => {
         if (e.status !== 'approved') return false;
 
         // Manual Gate Open Check (Priority)
@@ -120,14 +122,14 @@ const StudentDashboard = () => {
         const start = new Date(`${format(new Date(e.date), 'yyyy-MM-dd')}T${e.startTime}`);
         const end = new Date(`${format(new Date(e.date), 'yyyy-MM-dd')}T${e.endTime}`);
         return now >= start && now <= end;
-    });
+    }), [events]);
 
     // My Upcoming Events (RSVP'd)
-    const myUpcomingEvents = events.filter(e =>
+    const myUpcomingEvents = useMemo(() => events.filter(e =>
         e.attendees?.some(a => a.user === user?.id || a.user?._id === user?.id) &&
         e.status !== 'completed' &&
         e.status !== 'rejected'
-    );
+    ), [events, user?.id]);
 
     if (loading) return <div className="h-screen flex items-center justify-center"><Loader className="animate-spin text-primary" /></div>;
 
@@ -306,13 +308,15 @@ const StudentDashboard = () => {
                             {filteredEvents.map((event) => (
                                 <div key={event._id} className="w-full">
                                     <EventCard3D
-                                        title={event.title}
-                                        date={format(new Date(event.date), 'MMMM do')}
-                                        location={event.location}
+                                        key={event._id}
+                                        {...event}
+                                        date={format(new Date(event.date), 'MMM do')}
                                         image={event.galleryImages?.[0] || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&q=80&w=1000'}
-                                        attendees={event.attendees}
-                                        eventType={event.eventType}
-                                        onClick={() => navigate(`/events/${event._id}`)}
+                                        onClick={() => {
+                                            if (event.eventType !== 'notice') {
+                                                navigate(`/events/${event._id}`);
+                                            }
+                                        }}
                                     />
                                 </div>
                             ))}

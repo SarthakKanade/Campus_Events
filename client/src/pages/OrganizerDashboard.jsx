@@ -59,9 +59,9 @@ const OrganizerDashboard = () => {
                 // or that the list will be refreshed after an optimistic update/backend change.
                 // If the backend doesn't provide pending/rejected events, the 'Edit' button
                 // will only work for events that are already visible (e.g., approved, or if the API changes).
-                const res = await axios.get('/api/events');
-                let myEvents = res.data.filter(e => e.organizer._id === user.id || e.organizer === user.id);
-                setEvents(myEvents);
+                const config = { headers: { 'x-auth-token': user.token } };
+                const res = await axios.get('/api/events/my', config);
+                setEvents(res.data);
             } catch (err) { console.log(err); } finally { setLoading(false); }
         };
         fetchMyEvents();

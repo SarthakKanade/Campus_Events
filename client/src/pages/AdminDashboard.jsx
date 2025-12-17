@@ -52,7 +52,7 @@ const AdminDashboard = () => {
                 capacity: 0 // Irrelevant for notices
             }
             const token = localStorage.getItem('token');
-            const res = await axios.post('/api/events', payload, {
+            const res = await axios.post('/api/events/notice', payload, {
                 headers: { 'x-auth-token': token }
             });
             toast.success("Notice Posted!");
@@ -180,6 +180,12 @@ const AdminDashboard = () => {
                         className={`px-6 py-2 rounded-xl font-bold transition flex items-center gap-2 text-slate-500 hover:text-slate-800 hover:bg-white/50 border-l border-slate-200 ml-2 pl-6`}
                     >
                         <Megaphone className="w-4 h-4 text-orange-400" /> Post Notice
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('notices')}
+                        className={`px-6 py-2 rounded-xl font-bold transition flex items-center gap-2 ${activeTab === 'notices' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'}`}
+                    >
+                        <Megaphone className="w-4 h-4" /> Notices
                     </button>
                 </motion.div>
             </div>
@@ -418,7 +424,64 @@ const AdminDashboard = () => {
                     </div>
                 </motion.div>
             )}
-        </div>
+
+            {
+                activeTab === 'notices' && (
+                    <motion.div
+                        variants={containerVariants}
+                        initial="hidden"
+                        animate="visible"
+                    >
+                        <h2 className="text-xl font-bold text-slate-700 mb-6 flex items-center gap-2">
+                            <Megaphone className="text-orange-500" /> Public Notices
+                        </h2>
+
+                        {events.filter(e => e.eventType === 'notice').length === 0 ? (
+                            <div className="glass-panel p-12 text-center text-slate-400">
+                                <p className="text-lg font-medium">No active notices.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {events.filter(e => e.eventType === 'notice').map(notice => (
+                                    <motion.div key={notice._id} variants={itemVariants} className="glass-panel p-6 border-l-4 border-orange-500 relative group">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <h3 className="font-bold text-lg text-slate-800">{notice.title}</h3>
+                                                <p className="text-xs text-slate-500">{new Date(notice.date).toLocaleDateString()}</p>
+                                            </div>
+                                            <button
+                                                onClick={async () => {
+                                                    if (confirm('Delete this notice?')) {
+                                                        try {
+                                                            const token = localStorage.getItem('token');
+                                                            await axios.delete(`/api/events/${notice._id}`, { headers: { 'x-auth-token': token } });
+                                                            toast.success('Notice Deleted');
+                                                            setEvents(events.filter(e => e._id !== notice._id));
+                                                        } catch (e) {
+                                                            toast.error('Failed to delete');
+                                                        }
+                                                    }
+                                                }}
+                                                className="text-slate-400 hover:text-red-500 p-2 transition-colors"
+                                                title="Delete Notice"
+                                            >
+                                                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center hover:bg-red-100">
+                                                    <XSquare className="w-5 h-5" />
+                                                </div>
+                                            </button>
+                                        </div>
+                                        <p className="text-slate-600 text-sm">{notice.description}</p>
+                                        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2 text-xs text-slate-400 font-medium">
+                                            <span className="uppercase tracking-wider">Scope:</span> {notice.location || 'Campus-wide'}
+                                        </div>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        )}
+                    </motion.div>
+                )
+            }
+        </div >
     );
 };
 

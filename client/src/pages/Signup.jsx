@@ -112,7 +112,7 @@ const Signup = () => {
                         </div>
 
                         <div className="pt-4">
-                            <ChillButton variant="primary" className="w-full py-4 text-lg">
+                            <ChillButton type="submit" variant="primary" className="w-full py-4 text-lg">
                                 Create Account
                             </ChillButton>
                         </div>

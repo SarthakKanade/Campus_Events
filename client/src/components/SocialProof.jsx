@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import OptimizedImage from './OptimizedImage';
 
 const SocialProof = ({ attendees = [], max = 3 }) => {
     if (!attendees || attendees.length === 0) return null;
@@ -14,8 +15,10 @@ const SocialProof = ({ attendees = [], max = 3 }) => {
                     className="w-8 h-8 rounded-full border-2 border-white dark:border-slate-800 bg-slate-200 overflow-hidden relative z-10"
                     title={att.user?.name || 'Student'}
                 >
+
+
                     {att.user?.avatar ? (
-                        <img src={att.user.avatar} alt={att.user.name} className="w-full h-full object-cover" />
+                        <OptimizedImage src={att.user.avatar} alt={att.user.name} className="w-full h-full" />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary to-secondary text-[10px] font-bold text-white">
                             {att.user?.name?.charAt(0) || '?'}

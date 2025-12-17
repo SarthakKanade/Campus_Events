@@ -21,7 +21,7 @@ const userSchema = new mongoose.Schema({
     },
     studentID: {
         type: String,
-        required: function () { return this.role === 'student'; } // Only required if role is student
+        default: ''
     },
     bio: { type: String, default: '' },
     interests: [{ type: String }],
